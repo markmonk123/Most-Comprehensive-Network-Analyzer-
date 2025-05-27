@@ -1,16 +1,37 @@
-arp.js traceroute = require("traceroute");
+import React, { useState } from "react";
+import axios from "axios";
 
-// Perform traceroute for an IP address
-const performTraceroute = async (ip) => {
-  return new Promise((resolve, reject) => {
-    traceroute.trace(ip, (err, hops) => {
-      if (err) {
-        reject(new Error(`Traceroute error: ${err.message}`));
-      } else {
-        resolve(hops.map((hop, index) => ({ hop: index + 1, ...hop })));
-      }
-    });
-  });
-};
+function App() {
+  const [ip, setIP] = useState("");
+    const [results, setResults] = useState(null);
+      const [error, setError] = useState(null);
 
-module.exports = { performTraceroute };
+        const queryBackend = async (endpoint) => {
+            try {
+                  const response = await axios.post(`http://localhost:5000/api/${endpoint}`, { ip });
+                        setResults(response.data);
+                              setError(null);
+                                  } catch (err) {
+                                        setError(`Error querying ${endpoint}: ${err.message}`);
+                                            }
+                                              };
+
+                                                return (
+                                                    <div>
+                                                          <h1>Network Analyzer</h1>
+                                                                <input
+                                                                        type="text"
+                                                                                placeholder="Enter IP (IPv4/IPv6)"
+                                                                                        value={ip}
+                                                                                                onChange={(e) => setIP(e.target.value)}
+                                                                                                      />
+                                                                                                            <button onClick={() => queryBackend("mac")}>Get MAC</button>
+                                                                                                                  <button onClick={() => queryBackend("ripe")}>RIPEstat Data</button>
+                                                                                                                        <button onClick={() => queryBackend("traceroute")}>Traceroute</button>
+                                                                                                                              {error && <p style={{ color: "red" }}>{error}</p>}
+                                                                                                                                    {results && <pre>{JSON.stringify(results, null, 2)}</pre>}
+                                                                                                                                        </div>
+                                                                                                                                          );
+                                                                                                                                          }
+
+                                                                                                                                          export default App;
