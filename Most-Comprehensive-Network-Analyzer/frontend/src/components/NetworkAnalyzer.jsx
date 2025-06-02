@@ -1,6 +1,14 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
+// Helper: Check if input is a file type or suspicious payload
+function isSuspiciousInput(ip) {
+  // Check for file extensions or suspicious patterns
+  const filePattern = /\.(exe|sh|bat|js|py|php|pl|rb|jar|bin|dll|scr|msi|vbs|cmd|com|cpl|pif|gadget|wsf|lnk|zip|tar|gz|rar|7z)$/i;
+  const payloadPattern = /(payload|malware|virus|trojan|worm|exploit|shellcode)/i;
+  return filePattern.test(ip) || payloadPattern.test(ip);
+}
+
 const NetworkAnalyzer = () => {
   const [ip, setIp] = useState('');
   const [data, setData] = useState(null);
@@ -14,6 +22,19 @@ const NetworkAnalyzer = () => {
     event.preventDefault();
     setError('');
     setData(null);
+
+    // Check for file type or payload in input
+    if (isSuspiciousInput(ip)) {
+      // Log event to backend
+      try {
+        await axios.post('/api/log', { event: 'suspicious_input', value: ip });
+      } catch (e) {
+        // Optionally handle logging error
+      }
+      setError('Suspicious input detected. Data destroyed.');
+      setIp('');
+      return;
+    }
 
     try {
       const response = await axios.get(`/api/analyze/${ip}`);

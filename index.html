@@ -1,8 +1,9 @@
 async function initMap() {
   const data = await fetchData();
 
-  // Initialize map with max zoom 32
+  // Initialize map with min zoom 2 and max zoom 32
   const map = L.map("map", {
+    minZoom: 2, // Set your desired minimum zoom level here
     maxZoom: 32,
   }).setView([0, 0], 2);
 
@@ -67,4 +68,3 @@ async function initMap() {
     map.setView([data[0].lat, data[0].lon], 10); // If only one marker, center it
   }
 }
-```

@@ -1,4 +1,4 @@
-arp.js traceroute = require("traceroute");
+const traceroute = require("traceroute");
 
 // Perform traceroute for an IP address
 const performTraceroute = async (ip) => {

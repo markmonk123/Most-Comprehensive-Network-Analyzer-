@@ -1,9 +1,15 @@
 const { exec } = require("child_process");
 const os = require("os");
+const { validateIP } = require("./validate"); // Import validation
 
 // Local MAC lookup via ARP table
 const getMacFromArp = async (ip) => {
   return new Promise((resolve, reject) => {
+    // Validate IP before proceeding
+    if (!validateIP(ip)) {
+      return reject("Invalid IP address.");
+    }
+
     let arpCmd;
     const platform = os.platform();
 
