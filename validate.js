@@ -1,7 +1,6 @@
 const axios = require("axios");
 
 // Query RIPEstat API for IP data
-const queryRIPEstat = async (ip) => {
   try {
     const url = `https://stat.ripe.net/data/whois/data.json?resource=${ip}`;
     const response = await axios.get(url);
