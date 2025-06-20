@@ -21,9 +21,8 @@
             ],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "protocol": "inspector",
             "internalConsoleOptions": "neverOpen",
-            "disableOptimisticBPs": true
+                : false
         },
         {
             "name": "Attach by Process ID",
@@ -51,9 +50,8 @@
             ],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "protocol": "inspector",
             "internalConsoleOptions": "neverOpen",
-            "disableOptimisticBPs": false
+            "disableOptimisticBPs": "false",
         },
         {
             "type": "node-terminal",
