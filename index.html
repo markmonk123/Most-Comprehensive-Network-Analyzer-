@@ -1,4 +1,267 @@
-mv index.html Most-Comprehensive-Network-Analyzer/Most-Comprehensive-Network-Analyzer/frontend/public/index.htmlasync function initMap() {
+<!-- Wireshark Upload UI and Map Script -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Network Analyzer Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map { height: 600px; width: 100%; }
+    #uploadBox { margin: 20px 0; }
+  </style>
+</head>
+<body>
+  <div id="uploadBox">
+    <label for="wiresharkFile">Upload Wireshark .pcap or .gz file:</label>
+    <input type="file" id="wiresharkFile" accept=".pcap,.gz,application/gzip" />
+    <button onclick="handleWiresharkUpload()">Extract MACs/BSSIDs</button>
+    <div id="uploadResult"></div>
+  </div>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@pcap/parser@1.0.0/dist/pcap-parser.min.js"></script>
+  <script>
+    // Wireshark file parsing for MAC/BSSID extraction
+    function handleWiresharkUpload() {
+      const fileInput = document.getElementById('wiresharkFile');
+      const resultDiv = document.getElementById('uploadResult');
+      if (!fileInput.files.length) {
+        resultDiv.innerText = 'Please select a file.';
+        return;
+      }
+      const file = fileInput.files[0];
+      // Only allow .pcap or .gz extensions
+      if (!file.name.endsWith('.pcap') && !file.name.endsWith('.gz')) {
+        resultDiv.innerText = 'Only .pcap or .gz files are allowed.';
+        return;
+      }
+      if (file.name.endsWith('.gz')) {
+        // Handle gzip file
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          if (typeof window.pako === 'undefined') {
+            resultDiv.innerText = 'pako.js (gzip decompression) is required.';
+            return;
+          }
+          try {
+            const decompressed = window.pako.ungzip(new Uint8Array(e.target.result), { to: 'string' });
+            extractMacsFromContent(decompressed, resultDiv);
+          } catch (err) {
+            resultDiv.innerText = 'Failed to decompress gzip file.';
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        // Handle pcap file as text
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          extractMacsFromContent(e.target.result, resultDiv);
+        };
+        reader.readAsText(file);
+      }
+    }
+
+    // Helper to extract MACs from file content
+    function extractMacsFromContent(content, resultDiv) {
+      const macRegex = /([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})/g;
+      const found = content.match(macRegex) || [];
+      const macCounts = {};
+      found.forEach(mac => {
+        const norm = mac.toLowerCase();
+        macCounts[norm] = (macCounts[norm] || 0) + 1;
+      });
+      let html = '<b>Unique MAC/BSSID addresses found:</b><ul>';
+      Object.entries(macCounts).forEach(([mac, count]) => {
+        html += `<li>${mac} (seen ${count}x)</li>`;
+      });
+      html += '</ul>';
+      resultDiv.innerHTML = html;
+    }
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  </script>
+  <script>
+    async function getRipeStatPath(sourceIp, destIp) {
+      // Use RIPEstat API's 'traceroute' data for path
+      const url = `https://stat.ripe.net/data/traceroute/data.json?resource=${sourceIp}&target=${destIp}`;
+      try {
+        const resp = await fetch(url);
+        const data = await resp.json();
+        // Parse hops from RIPEstat traceroute data
+        const hops = (data.data && data.data.result && data.data.result[0] && data.data.result[0].hops) || [];
+        return hops.map(hop => hop.ip);
+      } catch (e) {
+        return [];
+      }
+    }
+
+    // Reverse DNS and TLS hostname check
+    async function checkReverseDnsAndTls(ip) {
+      // 1. Reverse DNS lookup
+      let rdns = '';
+      try {
+        const rdnsResp = await fetch(`https://stat.ripe.net/data/reverse-dns-ip/data.json?resource=${ip}`);
+        const rdnsData = await rdnsResp.json();
+        rdns = (rdnsData.data && rdnsData.data.reverse_dns && rdnsData.data.reverse_dns[0]) || '';
+      } catch (e) {}
+      // 2. TLS hostname (using RIPEstat SSL Cert API)
+      let tlsHost = '';
+      try {
+        const tlsResp = await fetch(`https://stat.ripe.net/data/ssl-certificate/data.json?resource=${ip}`);
+        const tlsData = await tlsResp.json();
+        if (tlsData.data && tlsData.data.certificates && tlsData.data.certificates.length > 0) {
+          tlsHost = tlsData.data.certificates[0].subject_common_name || '';
+        }
+      } catch (e) {}
+      // 3. Registry hostname (using RIPEstat WHOIS API)
+      let registryHost = '';
+      try {
+        const whoisResp = await fetch(`https://stat.ripe.net/data/whois/data.json?resource=${ip}`);
+        const whoisData = await whoisResp.json();
+        if (whoisData.data && whoisData.data.records) {
+          // Try to find a hostname in the WHOIS records
+          for (const rec of whoisData.data.records) {
+            for (const obj of rec) {
+              if (obj.key && obj.key.toLowerCase().includes('name') && obj.value) {
+                registryHost = obj.value;
+                break;
+              }
+            }
+            if (registryHost) break;
+          }
+        }
+      } catch (e) {}
+      // Compare
+      let mismatch = false;
+      if (rdns && tlsHost && registryHost) {
+        mismatch = (rdns !== registryHost) || (tlsHost !== registryHost);
+      }
+      return { ip, rdns, tlsHost, registryHost, mismatch };
+    }
+
+    // Find shortest path and detect artificial hops
+    async function analyzePaths(ipList) {
+      if (ipList.length < 2) return;
+      let minPath = null;
+      let minLen = Infinity;
+      let allPaths = [];
+      for (let i = 0; i < ipList.length - 1; i++) {
+        const src = ipList[i];
+        const dst = ipList[i + 1];
+        const path = await getRipeStatPath(src, dst);
+        allPaths.push({ src, dst, path });
+        if (path.length && path.length < minLen) {
+          minLen = path.length;
+          minPath = path;
+        }
+      }
+      // Check for artificial hops (e.g., repeated or out-of-order IPs)
+      let suspicious = false;
+      allPaths.forEach(({ path }) => {
+        for (let i = 1; i < path.length; i++) {
+          if (path[i] === path[i - 1]) suspicious = true;
+        }
+      });
+      return { minPath, allPaths, suspicious };
+    }
+
+    async function initMap() {
+      const data = await fetchData();
+
+      // Gather all IPs for path analysis
+      const ipList = data.map(entry => entry.ip).filter(Boolean);
+      // Analyze shortest path and artificial hops
+      let pathInfo = { minPath: [], allPaths: [], suspicious: false };
+      if (ipList.length > 1) {
+        pathInfo = await analyzePaths(ipList);
+      }
+
+      // Check reverse DNS and TLS hostnames for all IPs
+      const rdnsResults = [];
+      for (const ip of ipList) {
+        rdnsResults.push(await checkReverseDnsAndTls(ip));
+      }
+
+      // Initialize map with max zoom 32
+      const map = L.map("map", {
+        maxZoom: 32,
+      }).setView([0, 0], 2);
+
+      // OpenStreetMap base layer
+      const osmLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19, // Max zoom for OpenStreetMap
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(map);
+
+      // Google Maps Satellite base layer (Optional)
+      const googleSatelliteLayer = L.tileLayer(
+        `https://maps.googleapis.com/maps/api/staticmap?center={y},{x}&zoom={z}&size=256x256&maptype=satellite&key=YOUR_GOOGLE_MAPS_API_KEY`,
+        {
+          maxZoom: 32,
+          attribution: '&copy; <a href="https://maps.google.com">Google Maps</a>',
+        }
+      );
+
+      // Layer Control for toggling between OSM and Satellite views
+      const baseLayers = {
+        "OpenStreetMap": osmLayer,
+        "Google Satellite": googleSatelliteLayer, // Optional layer
+      };
+      L.control.layers(baseLayers).addTo(map); // Add layer switcher control
+
+      // Calculate bounds for dynamic zoom
+      const bounds = L.latLngBounds();
+
+      // Add markers with tooltips
+      data.forEach((entry) => {
+        const marker = L.marker([entry.lat, entry.lon]).addTo(map);
+        bounds.extend([entry.lat, entry.lon]);
+        // Find reverse DNS/TLS/registry info for this IP
+        const rdnsInfo = rdnsResults.find(r => r.ip === entry.ip);
+        let tooltip = `Lat: ${entry.lat}, Lon: ${entry.lon}`;
+        if (rdnsInfo) {
+          tooltip += `<br>rDNS: ${rdnsInfo.rdns || 'N/A'}`;
+          tooltip += `<br>TLS: ${rdnsInfo.tlsHost || 'N/A'}`;
+          tooltip += `<br>Registry: ${rdnsInfo.registryHost || 'N/A'}`;
+          if (rdnsInfo.mismatch) tooltip += `<br><span style='color:red'>Mismatch Detected!</span>`;
+        }
+        marker.bindTooltip(
+          tooltip,
+          { permanent: false, opacity: 0.9, direction: "top" }
+        );
+        marker.on("mouseover", function () {
+          marker.openTooltip();
+        });
+        marker.on("mouseout", function () {
+          marker.closeTooltip();
+        });
+      });
+
+      // Draw shortest path polyline if available
+      if (pathInfo.minPath && pathInfo.minPath.length > 1) {
+        // For each hop, get geolocation (using data or fallback to 0,0)
+        const hopLatLngs = pathInfo.minPath.map(ip => {
+          const found = data.find(e => e.ip === ip);
+          if (found) return [found.lat, found.lon];
+          return [0, 0];
+        });
+        L.polyline(hopLatLngs, { color: pathInfo.suspicious ? 'red' : 'blue', weight: 4, opacity: 0.7 }).addTo(map);
+      }
+
+      // Adjust map zoom to fit all markers
+      if (data.length > 1) {
+        map.fitBounds(bounds); // Dynamic zoom
+      } else if (data.length === 1) {
+        map.setView([data[0].lat, data[0].lon], 10); // If only one marker, center it
+      }
+    }
+    // Dummy fetchData for demo
+    async function fetchData() { return []; }
+    window.onload = initMap;
+  </script>
+</body>
+</html>
   const data = await fetchData();
 
   // Initialize map with max zoom 32

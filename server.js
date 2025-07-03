@@ -17,7 +17,7 @@ app.use(express.static(path.join(__dirname, 'Most-Comprehensive-Network-Analyzer
 
 // Helper: Check for suspicious input (file types, payloads, etc.)
 function isSuspiciousInput(ip) {
-  const filePattern = /\.(exe|sh|bat|js|py|php|pl|rb|jar|bin|dll|scr|msi|vbs|cmd|com|cpl|pif|gadget|wsf|lnk|zip|tar|gz|rar|7z)$/i;
+  const filePattern = /\.(exe|sh|bat|js|py|php|pl|rb|jar|bin|dll|scr|msi|vbs|cmd|com|cpl|pif|gadget|wsf|lnk|zip|tar|rar|7z)$/i;
   const payloadPattern = /(payload|malware|virus|trojan|worm|exploit|shellcode)/i;
   return filePattern.test(ip) || payloadPattern.test(ip);
 }

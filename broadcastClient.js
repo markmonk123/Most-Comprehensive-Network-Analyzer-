@@ -32,6 +32,8 @@ async function bindSocketWithRetry() {
 async function tryBroadcast() {
   let foundListener = false;
 
+  let timeout = 2000; // Start with 2 seconds
+  let attempt = 0;
   while (!foundListener) {
     const client = await bindSocketWithRetry();
     client.setBroadcast(true);
@@ -43,7 +45,6 @@ async function tryBroadcast() {
         console.log('Broadcast sent, waiting for response...');
       }
     });
-
 
     // Define recognized ports and messages
     const recognizedPorts = [PORT];
@@ -96,9 +97,13 @@ async function tryBroadcast() {
       }
     });
 
-    // Wait a bit before retrying if no response
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    if (!foundListener) client.close();
+    // Wait a bit before retrying if no response, using progressive incremental timeout
+    const currentTimeout = timeout * Math.pow(2, attempt);
+    await new Promise((resolve) => setTimeout(resolve, currentTimeout));
+    if (!foundListener) {
+      client.close();
+      attempt++;
+    }
   }
   console.log('Listener found, exiting broadcast loop.');
 }

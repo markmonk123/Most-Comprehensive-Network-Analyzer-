@@ -1,7 +1,9 @@
 from flask import Flask, request, jsonify
+
 import asyncio
 import aiohttp
 import folium
+from pymongo import MongoClient
 
 app = Flask(__name__)
 
@@ -21,16 +23,13 @@ async def init_map(ip_list):
     # Add OpenStreetMap base layer (folium uses OSM by default)
     # For Google Satellite, you would need a plugin or custom tile layer
 
-    # Add markers with tooltips
+    # Add markers with mouseover tooltips (only lat/lon shown on hover)
     bounds = []
     for entry in data:
         marker = folium.Marker(
             location=[entry['lat'], entry['lon']],
             tooltip=folium.Tooltip(
-                f"<div><strong>IP:</strong> {entry['ip']}<br>"
-                f"<strong>ASN:</strong> {entry['asn']}<br>"
-                f"<strong>Latitude:</strong> {entry['lat']}<br>"
-                f"<strong>Longitude:</strong> {entry['lon']}</div>",
+                f"Lat: {entry['lat']}, Lon: {entry['lon']}",
                 sticky=False
             )
         )
@@ -51,8 +50,19 @@ async def init_map(ip_list):
 async def fetch_data(ip_list):
     # ip_list: list of IP strings
     results = []
+    # 1. Gather IPs from ARPDB (MongoDB)
+    mongo_client = MongoClient("mongodb://localhost:27017")
+    db = mongo_client["ARPDB"]
+    mac_collection = db["macAddresses"]
+    # Get all unique IPs from ARPDB if not already in ip_list
+    arpdb_ips = set()
+    for doc in mac_collection.find({"ip": {"$exists": True}}):
+        arpdb_ips.add(doc["ip"])
+    # Merge and deduplicate
+    all_ips = list(set(ip_list) | arpdb_ips)
+
     async with aiohttp.ClientSession() as session:
-        for ip in ip_list:
+        for ip in all_ips:
             url = f"https://stat.ripe.net/data/prefix-overview/data.json?resource={ip}"
             async with session.get(url) as resp:
                 data = await resp.json()
@@ -70,6 +80,7 @@ async def fetch_data(ip_list):
                     "lat": lat,
                     "lon": lon
                 })
+    mongo_client.close()
     return results
 
 @app.route('/api/geolocate', methods=['POST'])
@@ -81,4 +92,4 @@ def geolocate():
     return jsonify(data)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="127.0.0.1", port=3000)
