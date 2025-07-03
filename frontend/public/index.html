@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Network Analyzer Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map { height: 70vh; width: 100vw; }
+    #input-area { margin: 1em 0; }
+    #ip-list { width: 300px; height: 100px; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+  <div id="input-area">
+    <input type="text" id="ipText" placeholder="Enter IP address" />
+    <button onclick="addIp()">Add IP</button>
+    <button onclick="removeSelectedIp()">Remove Selected</button>
+    <button onclick="queryIps()">Query & Show on Map</button>
+    <br/>
+    <select id="ip-list" multiple></select>
+    <div id="status"></div>
+  </div>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    let ipArray = [];
+
+    function setStatus(msg, isError) {
+      document.getElementById('status').innerHTML = `<span class="${isError ? 'error' : ''}">${msg}</span>`;
+    }
+
+    function addIp() {
+      const ipInput = document.getElementById('ipText');
+      const ip = ipInput.value.trim();
+      if (!ip) {
+        setStatus("Please enter an IP address.", true);
+        return;
+      }
+      if (ipArray.includes(ip)) {
+        setStatus("IP already in list.", true);
+        return;
+      }
+      ipArray.push(ip);
+      updateIpList();
+      ipInput.value = '';
+      setStatus("", false);
+    }
+
+    function removeSelectedIp() {
+      const listbox = document.getElementById('ip-list');
+      const selected = Array.from(listbox.selectedOptions).map(opt => opt.value);
+      ipArray = ipArray.filter(ip => !selected.includes(ip));
+      updateIpList();
+      setStatus("", false);
+    }
+
+    function updateIpList() {
+      const listbox = document.getElementById('ip-list');
+      listbox.innerHTML = '';
+      ipArray.forEach(ip => {
+        const option = document.createElement('option');
+        option.value = ip;
+        option.textContent = ip;
+        listbox.appendChild(option);
+      });
+    }
+
+    // Replace this with real API call if needed
+    async function fetchData(ipList) {
+      // Simulate fetching data for the given IPs
+      return ipList.map(ip => ({
+        ip,
+        asn: `AS${Math.floor(Math.random() * 10000)}`,
+        lat: (Math.random() * 180 - 90).toFixed(6),
+        lon: (Math.random() * 360 - 180).toFixed(6)
+      }));
+    }
+
+    let map, markersLayer;
+
+    async function queryIps() {
+      if (ipArray.length === 0) {
+        setStatus("No IPs to query.", true);
+        return;
+      }
+      setStatus("Querying...", false);
+      const data = await fetchData(ipArray);
+      setStatus("Query complete.", false);
+      showOnMap(data);
+    }
+
+    function showOnMap(data) {
+      if (!map) return;
+      if (markersLayer) {
+        markersLayer.clearLayers();
+      }
+      markersLayer = L.layerGroup().addTo(map);
+      const bounds = L.latLngBounds();
+      data.forEach((entry) => {
+        const marker = L.marker([entry.lat, entry.lon]).addTo(markersLayer);
+        bounds.extend([entry.lat, entry.lon]);
+        marker.bindTooltip(
+          `<div>
+             <strong>IP:</strong> ${entry.ip}<br>
+             <strong>ASN:</strong> ${entry.asn}<br>
+             <strong>Latitude:</strong> ${entry.lat}<br>
+             <strong>Longitude:</strong> ${entry.lon}
+           </div>`,
+          { permanent: false, opacity: 0.9, direction: "top" }
+        );
+        marker.on("mouseover", function () { marker.openTooltip(); });
+        marker.on("mouseout", function () { marker.closeTooltip(); });
+      });
+      if (data.length > 1) {
+        map.fitBounds(bounds);
+      } else if (data.length === 1) {
+        map.setView([data[0].lat, data[0].lon], 10);
+      }
+    }
+
+    function initMap() {
+      map = L.map("map", {
+        minZoom: 2,
+        maxZoom: 32,
+      }).setView([0, 0], 2);
+
+      const osmLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(map);
+
+      const googleSatelliteLayer = L.tileLayer(
+        `https://maps.googleapis.com/maps/api/staticmap?center={y},{x}&zoom={z}&size=256x256&maptype=satellite&key=YOUR_GOOGLE_MAPS_API_KEY`,
+        {
+          maxZoom: 32,
+          attribution: '&copy; <a href="https://maps.google.com">Google Maps</a>',
+        }
+      );
+
+      const baseLayers = {
+        "OpenStreetMap": osmLayer,
+        "Google Satellite": googleSatelliteLayer,
+      };
+      L.control.layers(baseLayers).addTo(map);
+
+      markersLayer = L.layerGroup().addTo(map);
+    }
+
+    window.onload = initMap;
+  </script>
+</body>
+</html>

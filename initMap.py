@@ -1,70 +1,95 @@
-async function initMap() {
-  const data = await fetchData();
+from flask import Flask, request, jsonify
 
-  // Initialize map with max zoom 32
-  const map = L.map("map", {
-    maxZoom: 32,
-  }).setView([0, 0], 2);
+import asyncio
+import aiohttp
+import folium
+from pymongo import MongoClient
 
-  // OpenStreetMap base layer
-  const osmLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19, // Max zoom for OpenStreetMap
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  }).addTo(map);
+app = Flask(__name__)
 
-  // Google Maps Satellite base layer (Optional)
-  const googleSatelliteLayer = L.tileLayer(
-    `https://maps.googleapis.com/maps/api/staticmap?center={y},{x}&zoom={z}&size=256x256&maptype=satellite&key=YOUR_GOOGLE_MAPS_API_KEY`,
-    {
-      maxZoom: 32,
-      attribution: '&copy; <a href="https://maps.google.com">Google Maps</a>',
-    }
-  );
+async def init_map(ip_list):
+    # Replace fetchData() with your Python data fetching logic
+    data = await fetch_data(ip_list)
 
-  // Layer Control for toggling between OSM and Satellite views
-  const baseLayers = {
-    "OpenStreetMap": osmLayer,
-    "Google Satellite": googleSatelliteLayer, // Optional layer
-  };
-  L.control.layers(baseLayers).addTo(map); // Add layer switcher control
+    # Initialize map with max zoom 32
+    if data:
+        center_lat = data[0]['lat']
+        center_lon = data[0]['lon']
+    else:
+        center_lat, center_lon = 0, 0
 
-  // Calculate bounds for dynamic zoom
-  const bounds = L.latLngBounds();
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=2, max_zoom=32)
 
-  // Add markers with tooltips
-  data.forEach((entry) => {
-    const marker = L.marker([entry.lat, entry.lon]).addTo(map);
+    # Add OpenStreetMap base layer (folium uses OSM by default)
+    # For Google Satellite, you would need a plugin or custom tile layer
 
-    // Extend bounds
-    bounds.extend([entry.lat, entry.lon]);
+    # Add markers with mouseover tooltips (only lat/lon shown on hover)
+    bounds = []
+    for entry in data:
+        marker = folium.Marker(
+            location=[entry['lat'], entry['lon']],
+            tooltip=folium.Tooltip(
+                f"Lat: {entry['lat']}, Lon: {entry['lon']}",
+                sticky=False
+            )
+        )
+        marker.add_to(m)
+        bounds.append([entry['lat'], entry['lon']])
 
-    // Add mouse-over tooltip
-    marker.bindTooltip(
-      `<div>
-         <strong>IP:</strong> ${entry.ip}<br>
-         <strong>ASN:</strong> ${entry.asn}<br>
-         <strong>Latitude:</strong> ${entry.lat}<br>
-         <strong>Longitude:</strong> ${entry.lon}
-       </div>`,
-      { permanent: false, opacity: 0.9, direction: "top" }
-    );
+    # Adjust map zoom to fit all markers
+    if len(bounds) > 1:
+        m.fit_bounds(bounds)
+    elif len(bounds) == 1:
+        m.location = bounds[0]
+        m.zoom_start = 10
 
-    // Show tooltip on mouse-over
-    marker.on("mouseover", function () {
-      marker.openTooltip(); // Opens tooltip on mouse-over
-    });
+    # Save or display the map
+    m.save("map.html")
 
-    // Hide tooltip on mouse-out
-    marker.on("mouseout", function () {
-      marker.closeTooltip(); // Closes tooltip on mouse-out
-    });
-  });
+# Example placeholder for fetch_data
+async def fetch_data(ip_list):
+    # ip_list: list of IP strings
+    results = []
+    # 1. Gather IPs from ARPDB (MongoDB)
+    mongo_client = MongoClient("mongodb://localhost:27017")
+    db = mongo_client["ARPDB"]
+    mac_collection = db["macAddresses"]
+    # Get all unique IPs from ARPDB if not already in ip_list
+    arpdb_ips = set()
+    for doc in mac_collection.find({"ip": {"$exists": True}}):
+        arpdb_ips.add(doc["ip"])
+    # Merge and deduplicate
+    all_ips = list(set(ip_list) | arpdb_ips)
 
-  // Adjust map zoom to fit all markers
-  if (data.length > 1) {
-    map.fitBounds(bounds); // Dynamic zoom
-  } else if (data.length === 1) {
-    map.setView([data[0].lat, data[0].lon], 10); // If only one marker, center it
-  }
-}
-```
+    async with aiohttp.ClientSession() as session:
+        for ip in all_ips:
+            url = f"https://stat.ripe.net/data/prefix-overview/data.json?resource={ip}"
+            async with session.get(url) as resp:
+                data = await resp.json()
+                # Extract geolocation if available
+                loc = data.get("data", {}).get("located_resources", [])
+                if loc and "latitude" in loc[0] and "longitude" in loc[0]:
+                    lat = loc[0]["latitude"]
+                    lon = loc[0]["longitude"]
+                else:
+                    lat, lon = 0, 0  # fallback if not found
+                asn = data.get("data", {}).get("asns", [{}])[0].get("asn", "Unknown")
+                results.append({
+                    "ip": ip,
+                    "asn": asn,
+                    "lat": lat,
+                    "lon": lon
+                })
+    mongo_client.close()
+    return results
+
+@app.route('/api/geolocate', methods=['POST'])
+def geolocate():
+    ip_list = request.json.get('ips', [])
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    data = loop.run_until_complete(fetch_data(ip_list))
+    return jsonify(data)
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=3000)
