@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Network Analyzer Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map { height: 100vh; width: 100vw; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    // Dummy fetchData function for demo; replace with your real data fetching
+    async function fetchData() {
+      return [
+        { ip: "8.8.8.8", asn: "AS15169", lat: 37.386, lon: -122.0838 },
+        { ip: "1.1.1.1", asn: "AS13335", lat: -33.494, lon: 143.2104 }
+      ];
+    }
+
+    async function initMap() {
+      const data = await fetchData();
+
+      // Initialize map with min zoom 2 and max zoom 32
+      const map = L.map("map", {
+        minZoom: 2,
+        maxZoom: 32,
+      }).setView([0, 0], 2);
+
+      // OpenStreetMap base layer
+      const osmLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(map);
+
+      // Google Maps Satellite base layer (Optional)
+      const googleSatelliteLayer = L.tileLayer(
+        `https://maps.googleapis.com/maps/api/staticmap?center={y},{x}&zoom={z}&size=256x256&maptype=satellite&key=YOUR_GOOGLE_MAPS_API_KEY`,
+        {
+          maxZoom: 32,
+          attribution: '&copy; <a href="https://maps.google.com">Google Maps</a>',
+        }
+      );
+
+      // Layer Control for toggling between OSM and Satellite views
+      const baseLayers = {
+        "OpenStreetMap": osmLayer,
+        "Google Satellite": googleSatelliteLayer,
+      };
+      L.control.layers(baseLayers).addTo(map);
+
+      // Calculate bounds for dynamic zoom
+      const bounds = L.latLngBounds();
+
+      // Add markers with tooltips
+      data.forEach((entry) => {
+        const marker = L.marker([entry.lat, entry.lon]).addTo(map);
+        bounds.extend([entry.lat, entry.lon]);
+        marker.bindTooltip(
+          `<div>
+             <strong>IP:</strong> ${entry.ip}<br>
+             <strong>ASN:</strong> ${entry.asn}<br>
+             <strong>Latitude:</strong> ${entry.lat}<br>
+             <strong>Longitude:</strong> ${entry.lon}
+           </div>`,
+          { permanent: false, opacity: 0.9, direction: "top" }
+        );
+        marker.on("mouseover", function () { marker.openTooltip(); });
+        marker.on("mouseout", function () { marker.closeTooltip(); });
+      });
+
+      // Adjust map zoom to fit all markers
+      if (data.length > 1) {
+        map.fitBounds(bounds);
+      } else if (data.length === 1) {
+        map.setView([data[0].lat, data[0].lon], 10);
+      }
+    }
+
+    // Run the map initialization
+    window.onload = initMap;
+  </script>
+</body>
+</html>
