@@ -33,10 +33,14 @@ const analyzePayload = async (payload) => {
   }
 };
 
-// Log suspicious events
+// Log suspicious events centrally
+const logEvent = (event, value) => {
+  console.log(`[LOG] Event: ${event}, Value: ${value}`);
+};
+
 app.post('/api/log', (req, res) => {
   const { event, value } = req.body;
-  console.log(`[LOG] Event: ${event}, Value: ${value}`);
+  logEvent(event, value);
   res.sendStatus(200);
 });
 
@@ -47,7 +51,7 @@ app.post("/api/mac", async (req, res) => {
     return res.status(400).json({ error: "Invalid IP address." });
   }
   if (isSuspiciousInput(ip)) {
-    await axios.post('/api/log', { event: 'suspicious_input', value: ip });
+    logEvent('suspicious_input', ip);
     const isMalicious = await analyzePayload(ip);
     if (isMalicious) {
       return res.status(400).json({ error: "Malicious payload detected." });
@@ -72,7 +76,7 @@ app.post("/api/ripe", async (req, res) => {
     return res.status(400).json({ error: "Invalid IP address." });
   }
   if (isSuspiciousInput(ip)) {
-    await axios.post('/api/log', { event: 'suspicious_input', value: ip });
+    logEvent('suspicious_input', ip);
     const isMalicious = await analyzePayload(ip);
     if (isMalicious) {
       return res.status(400).json({ error: "Malicious payload detected." });
@@ -93,7 +97,7 @@ app.post("/api/traceroute", async (req, res) => {
     return res.status(400).json({ error: "Invalid IP address." });
   }
   if (isSuspiciousInput(ip)) {
-    await axios.post('/api/log', { event: 'suspicious_input', value: ip });
+    logEvent('suspicious_input', ip);
     const isMalicious = await analyzePayload(ip);
     if (isMalicious) {
       return res.status(400).json({ error: "Malicious payload detected." });
@@ -117,7 +121,7 @@ app.post("/api/traceroute", async (req, res) => {
 app.post("/api/analyze", async (req, res) => {
   const { ip } = req.body;
   if (isSuspiciousInput(ip)) {
-    await axios.post('/api/log', { event: 'suspicious_input', value: ip });
+    logEvent('suspicious_input', ip);
     const isMalicious = await analyzePayload(ip);
     if (isMalicious) {
       return res.status(400).json({ error: "Malicious payload detected." });
