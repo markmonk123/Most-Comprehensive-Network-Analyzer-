@@ -3,16 +3,20 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "mocha server.test.js"
   },
   "dependencies": {
-    "20": "^3.1.9",
-    "axios": "^1.9.0",
-    "build": "^0.1.4",
+    "axios": "^1.11.0",
     "cors": "^2.8.5",
-    "express": "^4.21.2",
-    "maxmind": "^4.3.25",
+    "express": "^5.1.0",
+    "maxmind": "^5.0.0",
+    "mongodb": "^6.19.0",
+    "sqlite3": "^5.1.7",
     "traceroute": "^1.0.0"
+  },
+  "devDependencies": {
+    "mocha": "^11.7.1"
   },
   "description": "Repository name describes itself",
   "keywords": [],
