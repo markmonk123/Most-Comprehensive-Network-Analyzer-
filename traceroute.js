@@ -1,9 +1,10 @@
-const traceroute = require("traceroute");
+const Traceroute = require("traceroute-lite");
 
 // Perform traceroute for an IP address
 const performTraceroute = async (ip) => {
   return new Promise((resolve, reject) => {
-    traceroute.trace(ip, (err, hops) => {
+    const tracer = new Traceroute(ip);
+    tracer.start((err, hops) => {
       if (err) {
         reject(new Error(`Traceroute error: ${err.message}`));
       } else {
