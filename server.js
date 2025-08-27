@@ -145,7 +145,7 @@ app.post("/api/analyze-file", (req, res) => {
 });
 
 // Serve frontend
-app.get('*', (req, res) => {
+app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'Most-Comprehensive-Network-Analyzer/frontend/build', 'index.html'));
 });
 
