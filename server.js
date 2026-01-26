@@ -1,14 +1,13 @@
 const express = require("express");
 const cors = require("cors");
-const maxmind = require("maxmind");
 const axios = require("axios");
 const path = require('path');
 const { execFile } = require("child_process");
 
 const { queryRIPEstat } = require("./ripeApi");
 const { getMacFromArp } = require("./arp");
-const { performTraceroute } = require("./traceroute");
 const { validateIP } = require("./validate");
+const { buildTraceReport } = require("./traceService");
 
 const app = express();
 app.use(express.json());
@@ -86,7 +85,7 @@ app.post("/api/ripe", async (req, res) => {
   }
 });
 
-// Traceroute endpoint with MaxMind GeoIP logging
+// Traceroute endpoint with GeoIP, ASN, PTR, and RIPE routing context
 app.post("/api/traceroute", async (req, res) => {
   const { ip } = req.body;
   if (!ip || !validateIP(ip)) {
@@ -100,14 +99,29 @@ app.post("/api/traceroute", async (req, res) => {
     }
   }
   try {
-    const traceData = await performTraceroute(ip);
-    const lookup = await maxmind.open('./GeoLite2-City.mmdb');
-    const traceWithGeo = traceData.map(hop => {
-      const geo = hop.ip ? lookup.get(hop.ip) : null;
-      console.log(`Hop: ${hop.ip || 'N/A'}, Geo: ${geo ? JSON.stringify(geo.city) : 'Unknown'}`);
-      return { ...hop, geo };
-    });
-    res.json({ ip, trace: traceWithGeo });
+    const report = await buildTraceReport(ip);
+    res.json(report);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Unified trace endpoint (alias for traceroute with additional metadata)
+app.post("/api/trace", async (req, res) => {
+  const { ip } = req.body;
+  if (!ip || !validateIP(ip)) {
+    return res.status(400).json({ error: "Invalid IP address." });
+  }
+  if (isSuspiciousInput(ip)) {
+    await axios.post('/api/log', { event: 'suspicious_input', value: ip });
+    const isMalicious = await analyzePayload(ip);
+    if (isMalicious) {
+      return res.status(400).json({ error: "Malicious payload detected." });
+    }
+  }
+  try {
+    const report = await buildTraceReport(ip);
+    res.json(report);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

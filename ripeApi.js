@@ -14,7 +14,6 @@ db.serialize(() => {
 });
 
 // Query RIPEstat API for IP data
-
 const queryRIPEstat = async (ip) => {
   // First, try to get from sqlite3 cache
   return new Promise((resolve, reject) => {
@@ -54,4 +53,39 @@ const queryRIPEstat = async (ip) => {
   });
 };
 
-module.exports = { queryRIPEstat };
+const queryRipeRoutingStatus = async (resource) => {
+  try {
+    const url = `https://stat.ripe.net/data/routing-status/data.json?resource=${resource}`;
+    const response = await axios.get(url);
+    return response.data?.data || null;
+  } catch (error) {
+    throw new Error(`RIPEstat routing-status error: ${error.message}`);
+  }
+};
+
+const queryRipePrefixOverview = async (resource) => {
+  try {
+    const url = `https://stat.ripe.net/data/prefix-overview/data.json?resource=${resource}`;
+    const response = await axios.get(url);
+    return response.data?.data || null;
+  } catch (error) {
+    throw new Error(`RIPEstat prefix-overview error: ${error.message}`);
+  }
+};
+
+const queryRipeAsnHistory = async (resource) => {
+  try {
+    const url = `https://stat.ripe.net/data/asn-history/data.json?resource=${resource}`;
+    const response = await axios.get(url);
+    return response.data?.data || null;
+  } catch (error) {
+    throw new Error(`RIPEstat asn-history error: ${error.message}`);
+  }
+};
+
+module.exports = {
+  queryRIPEstat,
+  queryRipeRoutingStatus,
+  queryRipePrefixOverview,
+  queryRipeAsnHistory,
+};
